@@ -26,16 +26,20 @@ class Task:
     fn: Callable
     args: tuple = field(default_factory=tuple)
     kwargs: dict = field(default_factory=dict)
-    priority: int = 0          # lower = higher priority (min-heap)
+    priority: int = 0  # lower = higher priority (min-heap)
     created_at: float = field(default_factory=time.time)
     status: TaskStatus = TaskStatus.PENDING
     result: Any = None
     error: Exception | None = None
     metadata: dict = field(default_factory=dict)
+    seq: int = 0  # monotonic insertion counter for stable FIFO tie-breaking
 
     def __lt__(self, other: "Task") -> bool:
-        # Heap ordering: lower priority number first, then FIFO by created_at
-        return (self.priority, self.created_at) < (other.priority, other.created_at)
+        # Heap ordering: lower priority number first, then FIFO by insertion order.
+        # ``seq`` is a strictly increasing counter, so it guarantees stable FIFO
+        # ordering even when two tasks share the same ``created_at`` timestamp
+        # (``time.time()`` has limited resolution and can collide in tight loops).
+        return (self.priority, self.seq) < (other.priority, other.seq)
 
 
 class TaskQueue:
@@ -85,7 +89,9 @@ class TaskQueue:
                 kwargs=kwargs or {},
                 priority=priority,
                 metadata=metadata or {},
+                seq=self._counter,
             )
+            self._counter += 1
             heapq.heappush(self._heap, task)
             self._all[task_id] = task
         return self
@@ -146,7 +152,9 @@ class TaskQueue:
     def pending(self) -> list[Task]:
         """Return all pending tasks in priority order."""
         with self._lock:
-            return sorted(t for t in self._all.values() if t.status == TaskStatus.PENDING)
+            return sorted(
+                t for t in self._all.values() if t.status == TaskStatus.PENDING
+            )
 
     def done(self) -> list[Task]:
         """Return all completed tasks."""

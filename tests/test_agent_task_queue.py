@@ -1,6 +1,6 @@
 """Tests for agent-task-queue-py."""
-import pytest
-from agent_task_queue import TaskQueue, Task, TaskStatus
+
+from agent_task_queue import TaskQueue, TaskStatus
 
 
 def test_enqueue_and_pop():
@@ -162,3 +162,35 @@ def test_peek_does_not_remove():
     task = q.peek()
     assert task is not None
     assert q.size() == 1  # still there
+
+
+def test_fifo_within_same_priority(monkeypatch):
+    # Force identical timestamps so ordering must fall back to insertion order.
+    import agent_task_queue
+
+    monkeypatch.setattr(agent_task_queue.time, "time", lambda: 1000.0)
+    q = TaskQueue()
+    ids = [f"t{i:02d}" for i in range(30)]
+    for tid in ids:
+        q.enqueue(tid, lambda: None, priority=0)
+    assert [t.task_id for t in q.run_all()] == ids
+
+
+def test_priority_then_fifo_ordering(monkeypatch):
+    import agent_task_queue
+
+    monkeypatch.setattr(agent_task_queue.time, "time", lambda: 1000.0)
+    q = TaskQueue()
+    q.enqueue("a", lambda: None, priority=5)
+    q.enqueue("b", lambda: None, priority=1)
+    q.enqueue("c", lambda: None, priority=1)
+    q.enqueue("d", lambda: None, priority=5)
+    # Lower priority number first; ties broken by insertion order.
+    assert [t.task_id for t in q.run_all()] == ["b", "c", "a", "d"]
+
+
+def test_peek_returns_highest_priority():
+    q = TaskQueue()
+    q.enqueue("low", lambda: None, priority=10)
+    q.enqueue("high", lambda: None, priority=1)
+    assert q.peek().task_id == "high"
