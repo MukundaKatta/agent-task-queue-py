@@ -22,3 +22,6 @@ Homepage = "https://github.com/MukundaKatta/agent-task-queue-py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+agent_task_queue = ["py.typed"]
