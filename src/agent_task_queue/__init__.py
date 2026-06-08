@@ -80,8 +80,30 @@ class TaskQueue:
         priority: int = 0,
         metadata: dict | None = None,
     ) -> "TaskQueue":
-        """Add a task to the queue."""
+        """Add a task to the queue.
+
+        Args:
+            task_id: Unique identifier for the task. Used by :meth:`get` and
+                :meth:`cancel`. Must not already exist in the queue.
+            fn: The callable to run when the task executes.
+            args: Positional arguments passed to ``fn``.
+            kwargs: Keyword arguments passed to ``fn``.
+            priority: Execution priority. Lower numbers run first (min-heap);
+                negative values are allowed and run before ``0``.
+            metadata: Optional free-form dict stored on the task.
+
+        Returns:
+            ``self``, so calls can be chained.
+
+        Raises:
+            ValueError: If ``task_id`` is already present in the queue. Allowing
+                a duplicate would silently desynchronize the internal heap from
+                the id index, causing the same id to run more than once while
+                :meth:`size` and :meth:`pending` report only one entry.
+        """
         with self._lock:
+            if task_id in self._all:
+                raise ValueError(f"task_id {task_id!r} already exists in the queue")
             task = Task(
                 task_id=task_id,
                 fn=fn,
@@ -115,7 +137,14 @@ class TaskQueue:
             return None
 
     def execute(self, task: Task) -> Task:
-        """Run a task and update its status/result."""
+        """Run a task and update its status, result, and error in place.
+
+        The task's ``fn`` is invoked with its stored ``args`` and ``kwargs``.
+        On success the status becomes :attr:`TaskStatus.DONE` and ``result`` is
+        set; on any exception the status becomes :attr:`TaskStatus.FAILED` and
+        the exception is stored on ``error`` rather than propagated. The same
+        ``task`` object is returned for convenience.
+        """
         task.status = TaskStatus.RUNNING
         try:
             task.result = task.fn(*task.args, **task.kwargs)
